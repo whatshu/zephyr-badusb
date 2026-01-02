@@ -1,13 +1,13 @@
 /*
  * Minimal devicetree overlay for:
- * - USB CDC ACM (RP2350 internal USB device controller)
+ * - USB CDC ACM (RP2040 internal USB device controller)
  * - WS2812 LED strip on GPIO22 (PIO-based driver)
  */
 
 #include <freq.h>
 #include <zephyr/dt-bindings/gpio/gpio.h>
 #include <zephyr/dt-bindings/led/led.h>
-#include <zephyr/dt-bindings/pinctrl/rpi-pico-rp2350a-pinctrl.h>
+#include <zephyr/dt-bindings/pinctrl/rpi-pico-rp2040-pinctrl.h>
 
 / {
     /*

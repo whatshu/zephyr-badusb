@@ -29,7 +29,7 @@ USBD_DEVICE_DEFINE(nologo_usbd,
 
 USBD_DESC_LANG_DEFINE(nologo_lang);
 USBD_DESC_MANUFACTURER_DEFINE(nologo_mfr, "nologo");
-USBD_DESC_PRODUCT_DEFINE(nologo_product, "RP2350 nologo");
+USBD_DESC_PRODUCT_DEFINE(nologo_product, "RP2040 nologo");
 
 USBD_DESC_CONFIG_DEFINE(fs_cfg_desc, "FS Configuration");
 USBD_CONFIGURATION_DEFINE(nologo_fs_config, 0, 250, &fs_cfg_desc);

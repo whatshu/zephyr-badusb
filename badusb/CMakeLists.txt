@@ -3,7 +3,7 @@
 cmake_minimum_required(VERSION 3.20.0)
 
 if(NOT DEFINED BOARD)
-  set(BOARD "rpi_pico2/rp2350a/m33" CACHE STRING "Zephyr board" FORCE)
+  set(BOARD "rpi_pico" CACHE STRING "Zephyr board" FORCE)
 endif()
 
 #
