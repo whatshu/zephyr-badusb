@@ -12,10 +12,11 @@
 ## 功能
 
 - USB HID 键盘（启动时发送按键）
-- USB CDC ACM（Debug 模式）
-- USB MSC 存储（Debug 模式，flash-backed）
+- USB CDC ACM（始终启用）
+- USB MSC 存储（仅 Debug 模式，flash-backed）
 - WS2812 状态灯（GPIO22）
 - FAT 文件系统配置读取
+- printk 输出到 UART0（硬件串口）
 
 ## 编译
 
