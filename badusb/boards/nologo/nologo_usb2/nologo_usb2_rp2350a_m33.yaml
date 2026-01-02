@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+
+identifier: nologo_usb2/rp2350a/m33
+name: NoLogo USB Device 2 (RP2350 M33)
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+supported:
+  - gpio
+  - i2c
+  - spi
+  - hwinfo
+  - watchdog
+  - pwm
+  - flash
+  - dma
+  - counter
+  - uart
+  - adc
+  - usb_device
+vendor: nologo
+

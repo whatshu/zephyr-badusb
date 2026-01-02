@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# nologo_usb board definition based on Raspberry Pi Pico (RP2040)
+
+board:
+  name: nologo_usb
+  full_name: NoLogo USB Device (RP2040)
+  vendor: nologo
+  socs:
+    - name: rp2040
+

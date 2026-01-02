@@ -2,9 +2,11 @@
 
 cmake_minimum_required(VERSION 3.20.0)
 
-if(NOT DEFINED BOARD)
-  set(BOARD "rpi_pico" CACHE STRING "Zephyr board" FORCE)
-endif()
+#
+# Custom board root: allow using nologo_usb and nologo_usb2 boards
+# from the project-local boards/ directory.
+#
+list(APPEND BOARD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
 #
 # Select Kconfig fragments by build type.
@@ -46,4 +48,3 @@ if(NOLOGO_BUILD_FLAVOR STREQUAL "debug")
 else()
   target_compile_definitions(app PRIVATE NOLOGO_DEBUG=0)
 endif()
-

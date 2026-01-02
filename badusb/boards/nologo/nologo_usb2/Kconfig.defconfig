@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+
+if BOARD_NOLOGO_USB2
+
+config USB_SELF_POWERED
+	default n
+
+endif # BOARD_NOLOGO_USB2
+

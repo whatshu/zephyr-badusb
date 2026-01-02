@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+
+identifier: nologo_usb
+name: NoLogo USB Device (RP2040)
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+supported:
+  - gpio
+  - i2c
+  - spi
+  - hwinfo
+  - watchdog
+  - pwm
+  - flash
+  - dma
+  - counter
+  - uart
+  - adc
+  - usb_device
+vendor: nologo
+
