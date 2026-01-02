@@ -98,7 +98,8 @@ int nologo_config_init(void)
     nand_fatfs_unmount();
 
     config_buf[config_len] = 0;
-    printk("fs: loaded %s (%u bytes)\n", NOLOGO_CONFIG_PATH, (unsigned)config_len);
+    printk("fs: loaded %s (%u bytes), content:\n", NOLOGO_CONFIG_PATH, (unsigned)config_len);
+    printk("%s\n", config_buf);
     return 0;
 }
 

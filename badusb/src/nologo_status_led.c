@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "nologo_status_led.h"
+#include "nologo_build.h"
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
@@ -8,6 +9,7 @@
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/sys_clock.h>
+#include <zephyr/sys/printk.h>
 #include <limits.h>
 
 /* WS2812 LED strip (alias: led-strip) */
@@ -27,17 +29,18 @@ static uint32_t last_led_apply_ms;
 static volatile uint32_t last_printk_ms;
 
 /*
- * Pressure estimate: scheduling lateness (EWMA) in microseconds.
- * Measured directly in the timer ISR for accuracy.
+ * CPU load measurement using thread runtime stats.
+ * cpu_load_permille: 0 = idle, 1000 = 100% load
  */
-static uint64_t pressure_expected_cyc;
-static atomic_t pressure_avg_late_us;
+static atomic_t cpu_load_permille;
+static uint64_t last_all_cycles;
+static uint64_t last_idle_cycles;
 
-/*
- * Minimum latency threshold (us): ignore jitter below this level.
- * Typical context switch overhead on RP2040 is ~5-15us.
- */
-#define PRESSURE_NOISE_FLOOR_US 50U
+#if NOLOGO_DEBUG
+/* Print CPU load every N ticks (100ms each) -> 1 second */
+#define CPU_LOAD_PRINT_INTERVAL 10
+static uint32_t cpu_load_print_counter;
+#endif
 
 /* Application events */
 #define APP_EVT_PRESSURE_TICK  BIT(0)
@@ -74,82 +77,87 @@ static void status_led_apply(void)
     (void)led_strip_update_rgb(led_strip, &px, 1);
 }
 
-static uint32_t pressure_to_pulse_off_ms(uint32_t avg_late_us)
+static uint32_t cpu_load_to_pulse_off_ms(uint32_t load_permille)
 {
     /*
-     * Map EWMA lateness (us) -> OFF time (ms) between green pulses.
+     * Map CPU load (permille, 0-1000) -> OFF time (ms) between green pulses.
      *
-     * - idle (0-200us):  stay at max OFF time (slow blink)
-     * - moderate (200-2000us): gradual decrease
-     * - high load (>2000us): fast blink
-     *
-     * The curve is designed so that normal system jitter doesn't cause
-     * visible changes in blink rate. Only sustained load triggers faster
-     * blinking.
+     * - idle (0-5%):   stay at max OFF time (slow blink)
+     * - moderate:      gradual decrease
+     * - high (>80%):   fast blink
      */
-    const uint32_t off_min = 150;   /* high load: ~6 blinks/sec */
+    const uint32_t off_min = 100;   /* high load: ~10 blinks/sec */
     const uint32_t off_max = 3000;  /* idle: one pulse every ~3s */
 
-    /* Dead zone: ignore lateness below this threshold */
-    const uint32_t dead_zone_us = 200U;
-    /* Cap: beyond this, we're at max pressure indication */
-    const uint32_t late_cap_us = 2000U;
+    /* Dead zone: ignore load below 5% (50 permille) */
+    const uint32_t dead_zone = 50U;
+    /* Cap: beyond 80% (800 permille), we're at max indication */
+    const uint32_t load_cap = 800U;
 
-    if (avg_late_us <= dead_zone_us) {
+    if (load_permille <= dead_zone) {
         return off_max;
     }
 
-    uint32_t effective_late = avg_late_us - dead_zone_us;
-    uint32_t range = late_cap_us - dead_zone_us;
+    uint32_t effective_load = load_permille - dead_zone;
+    uint32_t range = load_cap - dead_zone;
 
     /* Linear mapping with clamping */
-    uint32_t p = MIN(effective_late, range);
+    uint32_t p = MIN(effective_load, range);
     uint32_t off_range = off_max - off_min;
 
     return off_max - (uint32_t)(((uint64_t)p * off_range) / range);
 }
 
-static void pressure_timer_handler(struct k_timer *timer)
+static void cpu_load_timer_handler(struct k_timer *timer)
 {
     ARG_UNUSED(timer);
 
     /*
-     * Measure lateness directly in ISR context for accuracy.
-     * This reflects true timer/interrupt scheduling delays, not thread delays.
+     * Calculate CPU load using thread runtime stats.
+     * We measure the idle thread's execution time vs total time.
+     * CPU load = 1 - (idle_time / total_time)
      */
-    uint64_t now_cyc = k_cycle_get_64();
-    uint64_t cps = sys_clock_hw_cycles_per_sec();
-    uint64_t tcyc = (cps * 20ULL) / 1000ULL; /* 20ms tick in cycles */
+    k_thread_runtime_stats_t all_stats;
+    k_thread_runtime_stats_t idle_stats;
 
-    if (pressure_expected_cyc == 0U) {
-        /* First tick: just initialize */
-        pressure_expected_cyc = now_cyc + tcyc;
-    } else {
-        uint64_t late_cyc = (now_cyc > pressure_expected_cyc) ?
-                            (now_cyc - pressure_expected_cyc) : 0U;
-
-        /* Resync if paused/debugged (late > 0.5s) */
-        if (late_cyc > (cps / 2ULL)) {
-            pressure_expected_cyc = now_cyc + tcyc;
-            late_cyc = 0U;
-        } else {
-            pressure_expected_cyc += tcyc;
-        }
-
-        uint32_t late_us = (uint32_t)MIN(
-            (late_cyc * 1000000ULL) / cps,
-            (uint64_t)UINT32_MAX);
-
-        /* Apply noise floor to filter out normal jitter */
-        if (late_us < PRESSURE_NOISE_FLOOR_US) {
-            late_us = 0U;
-        }
-
-        /* EWMA: alpha=1/16 for smoother response */
-        uint32_t old_avg = atomic_get(&pressure_avg_late_us);
-        uint32_t new_avg = (old_avg * 15U + late_us) / 16U;
-        atomic_set(&pressure_avg_late_us, new_avg);
+    if (k_thread_runtime_stats_all_get(&all_stats) != 0) {
+        k_event_post(&status_events, APP_EVT_PRESSURE_TICK);
+        return;
     }
+
+    /* Use all_stats for total cycles; idle cycles from idle thread */
+    uint64_t curr_all = all_stats.execution_cycles;
+
+    /* Try to get idle thread stats - thread 0 is typically idle */
+    extern struct k_thread z_idle_threads[];
+    if (k_thread_runtime_stats_get(&z_idle_threads[0], &idle_stats) != 0) {
+        /* Fallback: assume no idle if we can't get stats */
+        idle_stats.execution_cycles = 0;
+    }
+    uint64_t curr_idle = idle_stats.execution_cycles;
+
+    if (last_all_cycles > 0) {
+        uint64_t delta_all = curr_all - last_all_cycles;
+        uint64_t delta_idle = curr_idle - last_idle_cycles;
+
+        if (delta_all > 0) {
+            /* Calculate load in permille (0-1000) */
+            uint32_t load;
+            if (delta_idle >= delta_all) {
+                load = 0; /* All time spent in idle */
+            } else {
+                load = (uint32_t)(((delta_all - delta_idle) * 1000ULL) / delta_all);
+            }
+
+            /* EWMA: alpha=1/8 for responsive but smooth updates */
+            uint32_t old_load = atomic_get(&cpu_load_permille);
+            uint32_t new_load = (old_load * 7U + load) / 8U;
+            atomic_set(&cpu_load_permille, new_load);
+        }
+    }
+
+    last_all_cycles = curr_all;
+    last_idle_cycles = curr_idle;
 
     k_event_post(&status_events, APP_EVT_PRESSURE_TICK);
 }
@@ -171,7 +179,7 @@ static void green_timer_handler(struct k_timer *timer)
     }
 }
 
-K_TIMER_DEFINE(pressure_timer, pressure_timer_handler, NULL);
+K_TIMER_DEFINE(cpu_load_timer, cpu_load_timer_handler, NULL);
 K_TIMER_DEFINE(green_timer, green_timer_handler, NULL);
 
 static void status_led_thread(void *a, void *b, void *c)
@@ -190,17 +198,26 @@ static void status_led_thread(void *a, void *b, void *c)
         uint32_t now_ms = k_uptime_get_32();
 
         if (events & APP_EVT_PRESSURE_TICK) {
-            /* Infer printk "end" by inactivity */
+            /* Infer printk "end" by inactivity (>150ms since last printk) */
             if ((atomic_get(&status_flags) & STATUS_FLAG_PRINT_ACTIVE) != 0) {
-                if ((now_ms - last_printk_ms) > 30U) {
+                if ((now_ms - last_printk_ms) > 150U) {
                     atomic_and(&status_flags, ~STATUS_FLAG_PRINT_ACTIVE);
                     k_event_post(&status_events, APP_EVT_STATUS_UPDATE);
                 }
             }
 
-            /* Update pulse timing from ISR-measured pressure */
-            green_off_ms = pressure_to_pulse_off_ms(
-                (uint32_t)atomic_get(&pressure_avg_late_us));
+            /* Update pulse timing from CPU load measurement */
+            uint32_t load = (uint32_t)atomic_get(&cpu_load_permille);
+            green_off_ms = cpu_load_to_pulse_off_ms(load);
+
+#if NOLOGO_DEBUG
+            /* Print CPU load periodically (every 1 second) */
+            cpu_load_print_counter++;
+            if (cpu_load_print_counter >= CPU_LOAD_PRINT_INTERVAL) {
+                cpu_load_print_counter = 0;
+                printk("CPU: %u.%u%%\n", load / 10, load % 10);
+            }
+#endif
         }
 
         if (events & (APP_EVT_GREEN_TOGGLE | APP_EVT_STATUS_UPDATE)) {
@@ -219,8 +236,8 @@ void nologo_status_init(void)
     status_led_apply();
     k_timer_start(&green_timer, K_MSEC(green_on_ms), K_NO_WAIT);
 
-    /* Periodic pressure tick */
-    k_timer_start(&pressure_timer, K_NO_WAIT, K_MSEC(20));
+    /* Periodic CPU load measurement tick (every 100ms for stable readings) */
+    k_timer_start(&cpu_load_timer, K_MSEC(100), K_MSEC(100));
     k_event_post(&status_events, APP_EVT_STATUS_UPDATE);
 }
 
