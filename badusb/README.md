@@ -28,10 +28,10 @@ west build -p always -b nologo_usb .
 west build -p always -b nologo_usb . -- -DCMAKE_BUILD_TYPE=Debug
 
 # RP2350 Release
-west build -p always -b nologo_usb2/rp2350a/m33 .
+west build -p always -b nologo_usb2 .
 
 # RP2350 Debug
-west build -p always -b nologo_usb2/rp2350a/m33 . -- -DCMAKE_BUILD_TYPE=Debug
+west build -p always -b nologo_usb2 . -- -DCMAKE_BUILD_TYPE=Debug
 ```
 
 产物：`build/zephyr/zephyr.uf2`

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: Apache-2.0
-# nologo_usb2 board definition based on Raspberry Pi Pico 2 (RP2350)
 
 board:
   name: nologo_usb2
@@ -7,4 +6,3 @@ board:
   vendor: nologo
   socs:
     - name: rp2350a
-
