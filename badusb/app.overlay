@@ -1,0 +1,104 @@
+/*
+ * Minimal devicetree overlay for:
+ * - USB CDC ACM (RP2350 internal USB device controller)
+ * - WS2812 LED strip on GPIO22 (PIO-based driver)
+ */
+
+#include <freq.h>
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/led/led.h>
+#include <zephyr/dt-bindings/pinctrl/rpi-pico-rp2350a-pinctrl.h>
+
+/ {
+    /*
+     * Keep console on UART0 for reliable early boot.
+     * In Debug builds we route printk to USB CDC (and mirror to UART0) in firmware.
+     */
+
+    /* USB HID keyboard device (boot keyboard) */
+    hid_dev_0: hid_dev_0 {
+        compatible = "zephyr,hid-device";
+        label = "HID0";
+        protocol-code = "keyboard";
+        /* Boot keyboard input report is 8 bytes */
+        in-report-size = <8>;
+        in-polling-period-us = <1000>;
+    };
+
+    aliases {
+        led-strip = &ws2812;
+    };
+
+    /* Flash-backed disk for USB MSC (uses part of onboard flash) */
+    msc_disk0 {
+        compatible = "zephyr,flash-disk";
+        partition = <&storage_partition>;
+        disk-name = "NAND";
+        cache-size = <4096>;
+    };
+};
+
+/*
+ * Reserve a slice of flash for the USB Mass Storage LUN.
+ *
+ * NOTE: Offset/size are relative to the start of flash0.
+ * Default is the last 512 KiB of a 4 MiB flash (0x380000..0x3fffff).
+ * If your application grows close to the end of flash, shrink/move this.
+ */
+&flash0 {
+    partitions {
+        compatible = "fixed-partitions";
+        #address-cells = <1>;
+        #size-cells = <1>;
+
+        storage_partition: partition@380000 {
+            label = "storage";
+            reg = <0x00380000 0x00080000>;
+        };
+    };
+};
+
+/* PIO0 is disabled in the SoC dtsi; enable it for WS2812 */
+&pio0 {
+    status = "okay";
+
+    pio-ws2812 {
+        compatible = "worldsemi,ws2812-rpi_pico-pio";
+        status = "okay";
+        pinctrl-0 = <&ws2812_pio0_default>;
+        pinctrl-names = "default";
+        bit-waveform = <3>, <3>, <4>;
+
+        ws2812: ws2812 {
+            status = "okay";
+            gpios = <&gpio0 22 GPIO_ACTIVE_HIGH>;
+            chain-length = <1>;
+            /*
+             * Most WS2812/NeoPixel parts are GRB.
+             * Keep status LED semantics: green=pressure, blue=printk, red=fault.
+             */
+            color-mapping = <LED_COLOR_ID_GREEN
+                     LED_COLOR_ID_RED
+                     LED_COLOR_ID_BLUE>;
+            reset-delay = <280>;
+            frequency = <DT_FREQ_K(800)>;
+        };
+    };
+};
+
+&pinctrl {
+    ws2812_pio0_default: ws2812_pio0_default {
+        ws2812 {
+            pinmux = <PIO0_P22>;
+        };
+    };
+};
+
+/* Add USB CDC ACM UART instance to USB device controller */
+&zephyr_udc0 {
+    cdc_acm_uart0: cdc_acm_uart0 {
+        compatible = "zephyr,cdc-acm-uart";
+    };
+};
+
+/* UART0 remains enabled by the board, but console is redirected to USB */
