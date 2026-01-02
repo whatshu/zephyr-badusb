@@ -26,9 +26,18 @@ static uint32_t last_led_apply_ms;
 /* Track printk activity; "end" inferred by inactivity timeout */
 static volatile uint32_t last_printk_ms;
 
-/* Pressure estimate: scheduling lateness (EWMA) in microseconds */
+/*
+ * Pressure estimate: scheduling lateness (EWMA) in microseconds.
+ * Measured directly in the timer ISR for accuracy.
+ */
 static uint64_t pressure_expected_cyc;
-static uint32_t pressure_avg_late_us;
+static atomic_t pressure_avg_late_us;
+
+/*
+ * Minimum latency threshold (us): ignore jitter below this level.
+ * Typical context switch overhead on RP2040 is ~5-15us.
+ */
+#define PRESSURE_NOISE_FLOOR_US 50U
 
 /* Application events */
 #define APP_EVT_PRESSURE_TICK  BIT(0)
@@ -70,26 +79,78 @@ static uint32_t pressure_to_pulse_off_ms(uint32_t avg_late_us)
     /*
      * Map EWMA lateness (us) -> OFF time (ms) between green pulses.
      *
-     * - idle: long OFF time
-     * - under load: OFF time shrinks fast
+     * - idle (0-200us):  stay at max OFF time (slow blink)
+     * - moderate (200-2000us): gradual decrease
+     * - high load (>2000us): fast blink
      *
-     * We cap at 4000us (~4ms) lateness which already indicates significant
-     * scheduling jitter for a 20ms tick on this class of MCU.
+     * The curve is designed so that normal system jitter doesn't cause
+     * visible changes in blink rate. Only sustained load triggers faster
+     * blinking.
      */
-    const uint32_t off_min = 80;    /* high load */
-    const uint32_t off_max = 5000;  /* idle */
-    const uint32_t late_cap_us = 4000U;
+    const uint32_t off_min = 150;   /* high load: ~6 blinks/sec */
+    const uint32_t off_max = 3000;  /* idle: one pulse every ~3s */
 
-    uint32_t p = (MIN(avg_late_us, late_cap_us) * 1000U) / late_cap_us; /* 0..1000 */
-    uint32_t inv = 1000U - p;
-    uint32_t inv3 = (uint32_t)(((uint64_t)inv * inv * inv) / 1000000ULL); /* 0..1000 */
+    /* Dead zone: ignore lateness below this threshold */
+    const uint32_t dead_zone_us = 200U;
+    /* Cap: beyond this, we're at max pressure indication */
+    const uint32_t late_cap_us = 2000U;
 
-    return off_min + (uint32_t)(((uint64_t)(off_max - off_min) * inv3) / 1000ULL);
+    if (avg_late_us <= dead_zone_us) {
+        return off_max;
+    }
+
+    uint32_t effective_late = avg_late_us - dead_zone_us;
+    uint32_t range = late_cap_us - dead_zone_us;
+
+    /* Linear mapping with clamping */
+    uint32_t p = MIN(effective_late, range);
+    uint32_t off_range = off_max - off_min;
+
+    return off_max - (uint32_t)(((uint64_t)p * off_range) / range);
 }
 
 static void pressure_timer_handler(struct k_timer *timer)
 {
     ARG_UNUSED(timer);
+
+    /*
+     * Measure lateness directly in ISR context for accuracy.
+     * This reflects true timer/interrupt scheduling delays, not thread delays.
+     */
+    uint64_t now_cyc = k_cycle_get_64();
+    uint64_t cps = sys_clock_hw_cycles_per_sec();
+    uint64_t tcyc = (cps * 20ULL) / 1000ULL; /* 20ms tick in cycles */
+
+    if (pressure_expected_cyc == 0U) {
+        /* First tick: just initialize */
+        pressure_expected_cyc = now_cyc + tcyc;
+    } else {
+        uint64_t late_cyc = (now_cyc > pressure_expected_cyc) ?
+                            (now_cyc - pressure_expected_cyc) : 0U;
+
+        /* Resync if paused/debugged (late > 0.5s) */
+        if (late_cyc > (cps / 2ULL)) {
+            pressure_expected_cyc = now_cyc + tcyc;
+            late_cyc = 0U;
+        } else {
+            pressure_expected_cyc += tcyc;
+        }
+
+        uint32_t late_us = (uint32_t)MIN(
+            (late_cyc * 1000000ULL) / cps,
+            (uint64_t)UINT32_MAX);
+
+        /* Apply noise floor to filter out normal jitter */
+        if (late_us < PRESSURE_NOISE_FLOOR_US) {
+            late_us = 0U;
+        }
+
+        /* EWMA: alpha=1/16 for smoother response */
+        uint32_t old_avg = atomic_get(&pressure_avg_late_us);
+        uint32_t new_avg = (old_avg * 15U + late_us) / 16U;
+        atomic_set(&pressure_avg_late_us, new_avg);
+    }
+
     k_event_post(&status_events, APP_EVT_PRESSURE_TICK);
 }
 
@@ -119,10 +180,6 @@ static void status_led_thread(void *a, void *b, void *c)
     ARG_UNUSED(b);
     ARG_UNUSED(c);
 
-    const uint32_t tick_ms = 20U;
-    const uint64_t cyc_per_sec = sys_clock_hw_cycles_per_sec();
-    const uint64_t tick_cyc = (cyc_per_sec * tick_ms) / 1000ULL;
-
     while (1) {
         uint32_t events = k_event_wait(&status_events,
                           APP_EVT_PRESSURE_TICK |
@@ -133,35 +190,6 @@ static void status_led_thread(void *a, void *b, void *c)
         uint32_t now_ms = k_uptime_get_32();
 
         if (events & APP_EVT_PRESSURE_TICK) {
-            uint64_t now_cyc = k_cycle_get_64();
-
-            if (pressure_expected_cyc == 0U) {
-                pressure_expected_cyc = now_cyc + tick_cyc;
-            } else {
-                uint64_t late_cyc = (now_cyc > pressure_expected_cyc) ?
-                                (now_cyc - pressure_expected_cyc) :
-                                0U;
-
-                /*
-                 * Resync if we were paused/debugged for a while.
-                 * (late > 0.5s)
-                 */
-                if (late_cyc > (cyc_per_sec / 2ULL)) {
-                    pressure_expected_cyc = now_cyc + tick_cyc;
-                    late_cyc = 0U;
-                } else {
-                    pressure_expected_cyc += tick_cyc;
-                }
-
-                uint32_t late_us = (uint32_t)MIN(
-                    (late_cyc * 1000000ULL) / cyc_per_sec,
-                    (uint64_t)UINT32_MAX);
-
-                /* EWMA: alpha=1/8 */
-                pressure_avg_late_us =
-                    (pressure_avg_late_us * 7U + late_us) / 8U;
-            }
-
             /* Infer printk "end" by inactivity */
             if ((atomic_get(&status_flags) & STATUS_FLAG_PRINT_ACTIVE) != 0) {
                 if ((now_ms - last_printk_ms) > 30U) {
@@ -170,7 +198,9 @@ static void status_led_thread(void *a, void *b, void *c)
                 }
             }
 
-            green_off_ms = pressure_to_pulse_off_ms(pressure_avg_late_us);
+            /* Update pulse timing from ISR-measured pressure */
+            green_off_ms = pressure_to_pulse_off_ms(
+                (uint32_t)atomic_get(&pressure_avg_late_us));
         }
 
         if (events & (APP_EVT_GREEN_TOGGLE | APP_EVT_STATUS_UPDATE)) {

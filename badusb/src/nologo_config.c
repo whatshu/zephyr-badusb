@@ -7,6 +7,9 @@
 #include <zephyr/storage/disk_access.h>
 #include <zephyr/sys/printk.h>
 
+#include <errno.h>
+#include <string.h>
+
 #include <ff.h>
 
 #ifndef NOLOGO_CONFIG_PATH
@@ -35,13 +38,13 @@ static int nand_fatfs_mount(void)
 
     rc = disk_access_init("NAND");
     if (rc != 0) {
-        printk("fs: disk_access_init(NAND) failed (%d)\n", rc);
+        printk("fs: disk_access_init(NAND) failed (%d: %s)\n", rc, strerror(-rc));
         return rc;
     }
 
     rc = fs_mount(&nand_mnt);
     if (rc != 0) {
-        printk("fs: mount %s failed (%d)\n", nand_mnt.mnt_point, rc);
+        printk("fs: mount %s failed (%d: %s)\n", nand_mnt.mnt_point, rc, strerror(-rc));
     }
 
     return rc;
@@ -51,7 +54,7 @@ static void nand_fatfs_unmount(void)
 {
     int rc = fs_unmount(&nand_mnt);
     if (rc != 0) {
-        printk("fs: unmount failed (%d)\n", rc);
+        printk("fs: unmount failed (%d: %s)\n", rc, strerror(-rc));
     }
 }
 
@@ -71,7 +74,7 @@ int nologo_config_init(void)
     fs_file_t_init(&f);
     rc = fs_open(&f, NOLOGO_CONFIG_PATH, FS_O_READ);
     if (rc != 0) {
-        printk("fs: open %s failed (%d)\n", NOLOGO_CONFIG_PATH, rc);
+        printk("fs: open %s failed (%d: %s)\n", NOLOGO_CONFIG_PATH, rc, strerror(-rc));
         nand_fatfs_unmount();
         return rc;
     }
@@ -80,7 +83,7 @@ int nologo_config_init(void)
         ssize_t n = fs_read(&f, &config_buf[config_len],
                     NOLOGO_CONFIG_MAX_LEN - config_len);
         if (n < 0) {
-            printk("fs: read %s failed (%d)\n", NOLOGO_CONFIG_PATH, (int)n);
+            printk("fs: read %s failed (%d: %s)\n", NOLOGO_CONFIG_PATH, (int)n, strerror((int)-n));
             (void)fs_close(&f);
             nand_fatfs_unmount();
             return (int)n;

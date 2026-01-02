@@ -123,6 +123,13 @@ static void hid_demo_thread(void *a, void *b, void *c)
         k_msleep(50);
     }
 
+    /*
+     * Wait for USB enumeration to fully stabilize before sending
+     * the first HID report. This helps avoid "Endpoint busy" errors
+     * that can occur if the host is still setting up the interface.
+     */
+    k_msleep(100);
+
     memset(kbd_report, 0, KB_REPORT_SIZE);
     kbd_report[KB_KEY_CODE1] = (uint8_t)atomic_get(&startup_keycode);
     (void)hid_device_submit_report(hid_dev, KB_REPORT_SIZE, kbd_report);
@@ -149,7 +156,7 @@ int nologo_hid_init(void)
 
     ret = hid_device_register(hid_dev, hid_report_desc, sizeof(hid_report_desc), &hid_kbd_ops);
     if (ret != 0) {
-        printk("hid: register failed (%d)\n", ret);
+        printk("hid: register failed (%d: %s)\n", ret, strerror(-ret));
         nologo_status_set_fault();
         return ret;
     }

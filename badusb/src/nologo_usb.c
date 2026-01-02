@@ -12,6 +12,7 @@
 #include <zephyr/sys/printk.h>
 #include <zephyr/usb/usbd.h>
 #include <errno.h>
+#include <string.h>
 
 #if IS_ENABLED(CONFIG_USBD_MSC_CLASS)
 #include <zephyr/usb/class/usbd_msc.h>
@@ -56,7 +57,7 @@ static void usb_msg_cb(struct usbd_context *const ctx, const struct usbd_msg *ms
         if (msg->type == USBD_MSG_VBUS_READY) {
             int rc = usbd_enable(ctx);
             if (rc != 0 && rc != -EALREADY) {
-                printk("USBD: enable failed (%d)\n", rc);
+                printk("USBD: enable failed (%d: %s)\n", rc, strerror(-rc));
                 nologo_status_set_fault();
             }
         }
@@ -64,7 +65,7 @@ static void usb_msg_cb(struct usbd_context *const ctx, const struct usbd_msg *ms
         if (msg->type == USBD_MSG_VBUS_REMOVED) {
             int rc = usbd_disable(ctx);
             if (rc != 0 && rc != -EALREADY) {
-                printk("USBD: disable failed (%d)\n", rc);
+                printk("USBD: disable failed (%d: %s)\n", rc, strerror(-rc));
                 nologo_status_set_fault();
             }
         }
@@ -135,14 +136,14 @@ int nologo_usb_init(void)
      */
     int rc = disk_access_init("NAND");
     if (rc != 0) {
-        printk("msc: disk_access_init(\"NAND\") failed (%d)\n", rc);
+        printk("msc: disk_access_init(\"NAND\") failed (%d: %s)\n", rc, strerror(-rc));
         nologo_status_set_fault();
     }
 #endif
 
     int ret = usb_stack_init();
     if (ret != 0) {
-        printk("usb: init failed (%d)\n", ret);
+        printk("usb: init failed (%d: %s)\n", ret, strerror(-ret));
         nologo_status_set_fault();
     }
     return ret;

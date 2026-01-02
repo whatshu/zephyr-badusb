@@ -68,7 +68,12 @@
 		protocol-code = "keyboard";
 		/* Boot keyboard input report is 8 bytes */
 		in-report-size = <8>;
-		in-polling-period-us = <1000>;
+		/*
+		 * Polling period: 8ms is a good balance for keyboard.
+		 * 1ms was too aggressive and caused "Endpoint busy" errors
+		 * on RP2040 USB controller.
+		 */
+		in-polling-period-us = <8000>;
 	};
 
 	/* Flash-backed disk for USB MSC (uses part of onboard flash) */
