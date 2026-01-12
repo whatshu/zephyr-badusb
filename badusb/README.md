@@ -1,24 +1,27 @@
 # nologo_usb / nologo_usb2 (Zephyr)
 
-基于 Zephyr 的 USB 复合设备固件，支持两个自定义板级：
+bad usb application in rust for these two boards.
 
 - **nologo_usb**: Raspberry Pi Pico (RP2040)
 - **nologo_usb2**: Raspberry Pi Pico 2 (RP2350A Cortex-M33)
 
-## west 环境
+## west env
 
-当前目录下的 zephyr 使用的 west 工具环境在 */home/whatshu/develop/project/pico/zephyr-venv* 下.
+**the env setup is not part of this project, search for how to install it.**
 
-## 功能
+west toolchain in *../../../zephyr-venv*.
 
-- USB HID 键盘（启动时发送按键）
-- USB CDC ACM（始终启用）
-- USB MSC 存储（仅 Debug 模式，flash-backed）
-- WS2812 状态灯（GPIO22）
-- FAT 文件系统配置读取
-- printk 输出到 UART0（硬件串口）
+run *source ../../../zephyr-venv/bin/activate* to enable the env.
 
-## 编译
+## function
+
+- USB HID: keyboard
+- USB CDC ACM: serial
+- USB MSC: storage, only enabled in debug mode, everything is kept in flash
+- WS2812: status indicator, GPIO 22
+- FAT FS support
+
+## compile
 
 ```bash
 # RP2040 Release
@@ -34,13 +37,13 @@ west build -p always -b nologo_usb2 .
 west build -p always -b nologo_usb2 . -- -DCMAKE_BUILD_TYPE=Debug
 ```
 
-产物：`build/zephyr/zephyr.uf2`
+output: `build/zephyr/zephyr.uf2`
 
-## 烧录
+## flash
 
-将 `.uf2` 拖拽到 Pico 的 USB 存储模式，或使用 OpenOCD/probe-rs/J-Link。
+uf2 flash.
 
-## 代码结构
+## project structure
 
 ```
 badusb/
