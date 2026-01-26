@@ -16,9 +16,10 @@ run *source ../../../zephyr-venv/bin/activate* to enable the env.
 ## function
 
 - USB HID: keyboard with Rubber Ducky script support.
-- USB CDC ACM: serial for dual comm.
+- USB CDC ACM: serial for dual comm with handshake support.
 - USB MSC: storage, only enabled in debug mode. but everything is kept in flash in release mode.
 - WS2812: status indicator, GPIO 22. green for usb serial, red for init and error, blue for hid key stroke.
+- GPIO2: script disable pin. Pull HIGH to disable script execution (safety feature).
 - FAT FS support.
 
 ## Rubber Ducky Script Syntax
@@ -34,6 +35,9 @@ The device reads a config file from `/NAND:/config` and executes HID keyboard co
 | `DEFAULT_DELAY <ms>` | Set default delay between all commands |
 | `STRING <text>` | Type a text string |
 | `STRINGLN <text>` | Type text and press Enter |
+| `WAIT_HANDSHAKE [ms]` | Wait for CDC serial handshake (optional timeout) |
+| `WAIT_HOST [ms]` | Wait for host sync signal (optional timeout) |
+| `SIGNAL_HOST` | Send sync signal to host |
 
 ### Single Key Commands
 
@@ -92,11 +96,85 @@ STRING Hello, World!
 ENTER
 ```
 
+### CDC Serial Handshake & Synchronization
+
+The device supports handshake and bidirectional synchronization via CDC serial port.
+
+**Handshake Protocol (one-time authorization):**
+
+| Direction | Signal | Description |
+|-----------|--------|-------------|
+| Host → Device | `NOLOGO_SHAKE` | Initiate handshake |
+| Device → Host | `NOLOGO_ACK\r\n` | Handshake acknowledged |
+
+**Sync Protocol (bidirectional, repeatable):**
+
+| Direction | Signal | Description |
+|-----------|--------|-------------|
+| Host → Device | `NOLOGO_SYNC` | Host signals completion |
+| Device → Host | `NOLOGO_DONE\r\n` | Device signals completion |
+
+**Usage in script:**
+
+```
+REM Wait for initial handshake
+WAIT_HANDSHAKE
+
+REM Do some HID operations...
+STRING Step 1 complete
+ENTER
+
+REM Signal host that step is done
+SIGNAL_HOST
+
+REM Wait for host to complete its operation
+WAIT_HOST
+
+REM Continue with next step
+STRING Step 2 starting...
+```
+
+**Workflow Example:**
+
+1. Device boots, script executes `WAIT_HANDSHAKE`
+2. Host sends `NOLOGO_SHAKE`, device responds `NOLOGO_ACK`
+3. Device executes HID commands, then `SIGNAL_HOST` sends `NOLOGO_DONE`
+4. Host processes the result, then sends `NOLOGO_SYNC`
+5. Device's `WAIT_HOST` unblocks, script continues
+
+**Running the Sync Demo:**
+
+1. First, run the host sync script on Windows:
+
+```powershell
+# Auto-detect CDC port (recommended)
+.\examples\sync_host.ps1
+
+# Or specify port manually
+.\examples\sync_host.ps1 -ComPort COM3
+```
+
+2. Then plug in the BadUSB device (with `config_handshake.txt` as config)
+
+3. The sync script will:
+   - Auto-detect the CDC port
+   - Send handshake (`NOLOGO_SHAKE`)
+   - Wait for device's `NOLOGO_DONE` signal
+   - Send sync signal (`NOLOGO_SYNC`)
+
+4. The device will:
+   - Wait for handshake before executing HID commands
+   - Open Notepad after handshake
+   - Signal host when ready
+   - Wait for host sync before completing
+
 ### Example Config Files
 
 See the `examples/` directory for more sample scripts:
 
 - `config_hello_world.txt` - Basic Notepad example
+- `config_handshake.txt` - CDC serial handshake & sync example
+- `sync_host.ps1` - PowerShell host script for sync demo
 - `config_open_terminal.txt` - Open PowerShell/Terminal
 - `config_linux_terminal.txt` - Linux terminal commands
 - `config_macos_spotlight.txt` - macOS Spotlight usage

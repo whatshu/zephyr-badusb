@@ -20,14 +20,17 @@ static atomic_t status_flags;
 
 static atomic_t blue_on;
 static atomic_t green_on;
+static atomic_t red_on;
 static atomic_t red_blink_phase;
 
 static void blue_off_work_handler(struct k_work *work);
 static void green_off_work_handler(struct k_work *work);
+static void red_off_work_handler(struct k_work *work);
 static void fault_blink_work_handler(struct k_work *work);
 
 static K_WORK_DELAYABLE_DEFINE(blue_off_work, blue_off_work_handler);
 static K_WORK_DELAYABLE_DEFINE(green_off_work, green_off_work_handler);
+static K_WORK_DELAYABLE_DEFINE(red_off_work, red_off_work_handler);
 static K_WORK_DELAYABLE_DEFINE(fault_blink_work, fault_blink_work_handler);
 
 static void status_led_apply(void)
@@ -44,6 +47,9 @@ static void status_led_apply(void)
     }
     if (atomic_get(&blue_on)) {
         px.b = 0x10;
+    }
+    if (atomic_get(&red_on)) {
+        px.r = 0x10;
     }
     if ((flags & STATUS_FLAG_FAULT) != 0) {
         if (atomic_get(&red_blink_phase)) {
@@ -70,6 +76,13 @@ static void green_off_work_handler(struct k_work *work)
     status_led_apply();
 }
 
+static void red_off_work_handler(struct k_work *work)
+{
+    ARG_UNUSED(work);
+    atomic_set(&red_on, 0);
+    status_led_apply();
+}
+
 static void fault_blink_work_handler(struct k_work *work)
 {
     ARG_UNUSED(work);
@@ -92,6 +105,7 @@ void nologo_status_init(void)
     atomic_clear(&status_flags);
     atomic_set(&blue_on, 0);
     atomic_set(&green_on, 0);
+    atomic_set(&red_on, 0);
     atomic_set(&red_blink_phase, 0);
     status_led_apply();
 }
@@ -126,3 +140,9 @@ void nologo_status_blink_green(void)
     k_work_schedule(&green_off_work, K_MSEC(LED_BLINK_DURATION_MS));
 }
 
+void nologo_status_blink_red(void)
+{
+    atomic_set(&red_on, 1);
+    status_led_apply();
+    k_work_schedule(&red_off_work, K_MSEC(LED_BLINK_DURATION_MS));
+}

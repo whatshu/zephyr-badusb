@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "nologo_usb.h"
+#include "nologo_cdc.h"
 
 #include "nologo_status_led.h"
 
@@ -9,6 +10,7 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/usb/usbd.h>
+#include <zephyr/drivers/uart.h>
 #include <errno.h>
 #include <string.h>
 
@@ -53,6 +55,29 @@ static void usb_msg_cb(struct usbd_context *const ctx, const struct usbd_msg *ms
             }
         }
     }
+
+#if IS_ENABLED(CONFIG_USBD_CDC_ACM_CLASS)
+    /* Handle CDC ACM control line state changes (DTR/RTS) */
+    if (msg->type == USBD_MSG_CDC_ACM_CONTROL_LINE_STATE) {
+        uint32_t dtr = 0;
+
+        uart_line_ctrl_get(msg->dev, UART_LINE_CTRL_DTR, &dtr);
+        printk("usb: CDC ACM control line state changed, DTR=%u\n", dtr);
+
+        if (dtr) {
+            nologo_cdc_notify_dtr_set();
+        } else {
+            nologo_cdc_notify_dtr_clear();
+        }
+    }
+
+    if (msg->type == USBD_MSG_CDC_ACM_LINE_CODING) {
+        uint32_t baudrate = 0;
+
+        uart_line_ctrl_get(msg->dev, UART_LINE_CTRL_BAUD_RATE, &baudrate);
+        printk("usb: CDC ACM line coding changed, baudrate=%u\n", baudrate);
+    }
+#endif
 }
 
 static int usb_stack_init(void)

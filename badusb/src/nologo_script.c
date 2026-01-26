@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "nologo_script.h"
+#include "nologo_cdc.h"
 #include "nologo_config.h"
 #include "nologo_status_led.h"
 
@@ -11,6 +12,7 @@
 #include <zephyr/usb/class/usbd_hid.h>
 #include <zephyr/usb/class/hid.h>
 #include <zephyr/drivers/usb/udc_buf.h>
+#include <zephyr/drivers/gpio.h>
 
 #include <ctype.h>
 #include <errno.h>
@@ -20,6 +22,12 @@
 
 /* HID device */
 static const struct device *const hid_dev = DEVICE_DT_GET_ONE(zephyr_hid_device);
+
+/* Script disable pin: GPIO2
+ * When HIGH, script execution is disabled (safety feature)
+ */
+#define SCRIPT_DISABLE_PIN 2
+static const struct device *const gpio_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
 
 /* Keyboard report buffer */
 enum {
@@ -308,6 +316,55 @@ static int parse_and_execute_line(const char *line, size_t len)
         default_delay_ms = atoi(arg);
         printk("script: DEFAULT_DELAY set to %u ms\n", default_delay_ms);
         return 0;
+    }
+
+    /* WAIT_HANDSHAKE [timeout_ms] - Wait for CDC serial handshake */
+    if ((strncasecmp(cmd, "WAIT_HANDSHAKE", cmd_len) == 0 && cmd_len == 14) ||
+        (strncasecmp(cmd, "WAITHANDSHAKE", cmd_len) == 0 && cmd_len == 13)) {
+        const char *arg = skip_whitespace(cmd + cmd_len, end);
+        uint32_t timeout_ms = 0;
+        if (arg < end && *arg != '\0') {
+            timeout_ms = (uint32_t)atoi(arg);
+        }
+        printk("script: WAIT_HANDSHAKE (timeout=%u ms)\n", timeout_ms);
+        int ret = nologo_cdc_wait_handshake(timeout_ms);
+        if (ret == 0) {
+            printk("script: handshake completed!\n");
+            nologo_status_blink_green();
+        } else {
+            printk("script: handshake timeout\n");
+        }
+        return ret;
+    }
+
+    /* WAIT_HOST [timeout_ms] - Wait for host to send sync signal */
+    if ((strncasecmp(cmd, "WAIT_HOST", cmd_len) == 0 && cmd_len == 9) ||
+        (strncasecmp(cmd, "WAITHOST", cmd_len) == 0 && cmd_len == 8)) {
+        const char *arg = skip_whitespace(cmd + cmd_len, end);
+        uint32_t timeout_ms = 0;
+        if (arg < end && *arg != '\0') {
+            timeout_ms = (uint32_t)atoi(arg);
+        }
+        printk("script: WAIT_HOST (timeout=%u ms)\n", timeout_ms);
+        int ret = nologo_cdc_wait_host(timeout_ms);
+        if (ret == 0) {
+            printk("script: host sync received!\n");
+            nologo_status_blink_green();
+        } else {
+            printk("script: wait host timeout\n");
+        }
+        return ret;
+    }
+
+    /* SIGNAL_HOST - Signal host that device has completed */
+    if ((strncasecmp(cmd, "SIGNAL_HOST", cmd_len) == 0 && cmd_len == 11) ||
+        (strncasecmp(cmd, "SIGNALHOST", cmd_len) == 0 && cmd_len == 10)) {
+        printk("script: SIGNAL_HOST\n");
+        int ret = nologo_cdc_signal_host();
+        if (ret == 0) {
+            nologo_status_blink_green();
+        }
+        return ret;
     }
 
     /* STRING <text> */
@@ -669,6 +726,33 @@ static const struct hid_device_ops script_hid_ops = {
 static const uint8_t script_hid_report_desc[] = HID_KEYBOARD_REPORT_DESC();
 
 /**
+ * @brief Check if script execution is disabled via GPIO2
+ * @return true if disabled (GPIO2 is HIGH), false if enabled
+ */
+static bool script_is_disabled(void)
+{
+    if (!device_is_ready(gpio_dev)) {
+        printk("script: GPIO device not ready, assuming enabled\n");
+        return false;
+    }
+
+    int ret = gpio_pin_configure(gpio_dev, SCRIPT_DISABLE_PIN,
+                                  GPIO_INPUT | GPIO_PULL_DOWN);
+    if (ret != 0) {
+        printk("script: failed to configure GPIO%d (%d)\n", SCRIPT_DISABLE_PIN, ret);
+        return false;
+    }
+
+    int value = gpio_pin_get(gpio_dev, SCRIPT_DISABLE_PIN);
+    if (value < 0) {
+        printk("script: failed to read GPIO%d (%d)\n", SCRIPT_DISABLE_PIN, value);
+        return false;
+    }
+
+    return (value == 1);
+}
+
+/**
  * @brief Script execution thread
  */
 static void script_thread(void *a, void *b, void *c)
@@ -680,6 +764,14 @@ static void script_thread(void *a, void *b, void *c)
     /* Wait for HID interface to be ready */
     while (!script_hid_ready) {
         k_msleep(50);
+    }
+
+    /* Check if script execution is disabled via GPIO2 */
+    if (script_is_disabled()) {
+        printk("script: DISABLED (GPIO%d is HIGH)\n", SCRIPT_DISABLE_PIN);
+        nologo_status_blink_red();
+        k_sleep(K_FOREVER);
+        return;
     }
 
     /* Wait 1 second after device is ready before executing script */

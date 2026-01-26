@@ -30,3 +30,9 @@ void nologo_status_blink_blue(void);
  * Call this when CDC serial input/output occurs.
  */
 void nologo_status_blink_green(void);
+
+/**
+ * Trigger a brief RED LED blink.
+ * Call this when script execution is disabled.
+ */
+void nologo_status_blink_red(void);

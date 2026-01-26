@@ -1,0 +1,55 @@
+REM ============================================
+REM BadUSB Script: CDC Handshake Demo
+REM
+REM IMPORTANT: Run sync_host.ps1 FIRST on host!
+REM   .\sync_host.ps1 -ComPort COM3
+REM
+REM This script waits for handshake before
+REM executing any HID commands.
+REM ============================================
+
+DEFAULT_DELAY 50
+
+REM ============================================
+REM Step 1: Wait for handshake from host
+REM The host must run sync_host.ps1 first
+REM ============================================
+WAIT_HANDSHAKE
+
+REM ============================================
+REM Step 2: Handshake received, open Notepad
+REM ============================================
+DELAY 200
+GUI r
+DELAY 500
+STRING notepad
+ENTER
+DELAY 1000
+
+STRING ========================================
+ENTER
+STRING   CDC Handshake Demo
+ENTER
+STRING ========================================
+ENTER
+ENTER
+STRING [Device] Handshake received!
+ENTER
+STRING [Device] Signaling host...
+ENTER
+
+REM Signal host that notepad is ready
+SIGNAL_HOST
+
+STRING [Device] Waiting for host sync...
+ENTER
+
+REM Wait for host to send NOLOGO_SYNC
+WAIT_HOST
+
+STRING [Device] Host sync received!
+ENTER
+STRING [Device] Demo complete!
+ENTER
+
+REM Done!
