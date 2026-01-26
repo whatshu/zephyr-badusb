@@ -1,0 +1,27 @@
+REM ============================================
+REM BadUSB Script: Open Terminal
+REM This script opens a terminal/command prompt
+REM ============================================
+
+DEFAULT_DELAY 100
+
+REM === Windows: Open PowerShell ===
+GUI r
+DELAY 500
+STRING powershell
+ENTER
+DELAY 1000
+
+REM Type some commands
+STRING echo "Hello from BadUSB!"
+ENTER
+DELAY 200
+
+STRING Get-Date
+ENTER
+
+REM === Alternative for Linux: Open terminal ===
+REM CTRL-ALT t
+REM DELAY 1000
+REM STRING echo "Hello from BadUSB!"
+REM ENTER

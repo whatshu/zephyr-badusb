@@ -1,0 +1,73 @@
+REM ============================================
+REM BadUSB Script: Keyboard Test
+REM Tests all key types and modifiers
+REM ============================================
+
+REM This script tests various keyboard functions
+
+DEFAULT_DELAY 200
+
+REM Open Notepad first
+GUI r
+DELAY 500
+STRING notepad
+ENTER
+DELAY 1000
+
+REM Test STRING command
+STRING Testing STRING command: Hello World!
+ENTER
+
+REM Test STRINGLN command (auto enter)
+STRINGLN This line uses STRINGLN command
+
+REM Test special characters
+STRING Special chars: !@#$%^&*()_+-=[]{}|;':",.<>?/`~
+ENTER
+ENTER
+
+REM Test single keys
+STRING Testing single keys:
+ENTER
+TAB
+STRING (after TAB)
+ENTER
+SPACE
+SPACE
+SPACE
+STRING (after 3 SPACEs)
+ENTER
+
+REM Test navigation
+STRING Navigation test: 
+HOME
+STRING [HOME]
+END
+STRING [END]
+ENTER
+
+REM Test arrow keys
+STRING Arrow keys: 
+UP
+DOWN
+LEFT
+RIGHT
+ENTER
+
+REM Test function keys (just show text, don't actually press)
+STRING Function keys: F1-F12 available
+ENTER
+
+REM Test modifier combinations
+STRING Modifier test:
+ENTER
+STRING CTRL+A would select all
+ENTER
+STRING ALT+F4 would close window
+ENTER
+STRING GUI+D would show desktop
+ENTER
+
+REM Complete
+ENTER
+STRING === Keyboard test complete! ===

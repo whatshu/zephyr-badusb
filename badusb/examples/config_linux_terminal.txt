@@ -1,0 +1,36 @@
+REM ============================================
+REM BadUSB Script: Linux Terminal Commands
+REM Opens terminal and runs commands on Linux
+REM ============================================
+
+DEFAULT_DELAY 100
+DELAY 500
+
+REM Open terminal (GNOME/Ubuntu)
+CTRL-ALT t
+DELAY 1000
+
+REM Display system info
+STRING echo "=== System Information ==="
+ENTER
+DELAY 200
+
+STRING uname -a
+ENTER
+DELAY 200
+
+STRING whoami
+ENTER
+DELAY 200
+
+STRING id
+ENTER
+DELAY 200
+
+STRING df -h
+ENTER
+DELAY 200
+
+REM List network interfaces
+STRING ip addr show
+ENTER

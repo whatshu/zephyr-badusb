@@ -1,0 +1,21 @@
+REM ============================================
+REM BadUSB Script: Rick Roll
+REM Opens a browser and plays Rick Astley
+REM ============================================
+
+DEFAULT_DELAY 50
+DELAY 500
+
+REM Open Run dialog
+GUI r
+DELAY 500
+
+REM Open browser with YouTube link
+STRING https://www.youtube.com/watch?v=dQw4w9WgXcQ
+ENTER
+
+REM Wait for browser to load
+DELAY 3000
+
+REM Press F11 for fullscreen (optional)
+F11

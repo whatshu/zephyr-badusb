@@ -34,6 +34,7 @@ target_sources(app PRIVATE
   src/nologo_cdc.c
   src/nologo_config.c
   src/nologo_hid.c
+  src/nologo_script.c
   src/nologo_status_led.c
   src/nologo_usb.c
 )

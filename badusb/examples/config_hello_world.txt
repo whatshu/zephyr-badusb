@@ -1,0 +1,29 @@
+REM ============================================
+REM BadUSB Script: Hello World
+REM This script opens Notepad and types a message
+REM ============================================
+
+REM Set default delay between commands (50ms)
+DEFAULT_DELAY 50
+
+REM Wait a bit for the system to recognize the device
+DELAY 500
+
+REM Open Run dialog (Windows + R)
+GUI r
+DELAY 500
+
+REM Type notepad and press Enter
+STRING notepad
+ENTER
+DELAY 1000
+
+REM Type hello world message
+STRING Hello, World!
+ENTER
+ENTER
+STRING This message was typed by BadUSB.
+ENTER
+STRING Script execution complete!
+
+REM Done!

