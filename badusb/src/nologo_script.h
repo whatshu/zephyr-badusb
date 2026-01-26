@@ -37,6 +37,7 @@
  *   GUI-SHIFT <key>         - GUI + Shift + key
  *   REPEAT <n>              - Repeat previous command n times
  *   DEFAULT_DELAY <ms>      - Set default delay between commands
+ *   STRING_DELAY <ms>       - Set typing speed (delay per key, default 50ms)
  *   WAIT_HANDSHAKE [ms]     - Wait for CDC serial handshake (optional timeout)
  *   WAIT_HOST [ms]          - Wait for host sync signal (optional timeout)
  *   SIGNAL_HOST             - Send sync signal to host

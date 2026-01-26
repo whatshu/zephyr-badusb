@@ -1,0 +1,50 @@
+REM ============================================
+REM BadUSB Script: STRING_DELAY Demo
+REM Demonstrates different typing speeds
+REM ============================================
+
+REM Wait for system to recognize the device
+DELAY 500
+
+REM Open Notepad
+GUI r
+DELAY 500
+STRING notepad
+ENTER
+DELAY 1000
+
+REM Default speed (50ms per key)
+STRING === Default Speed (50ms) ===
+ENTER
+STRING The quick brown fox jumps over the lazy dog.
+ENTER
+ENTER
+
+REM Fast typing (10ms per key)
+STRING_DELAY 10
+STRING === Fast Speed (10ms) ===
+ENTER
+STRING The quick brown fox jumps over the lazy dog.
+ENTER
+ENTER
+
+REM Very fast typing (5ms per key - minimum)
+STRING_DELAY 5
+STRING === Very Fast Speed (5ms) ===
+ENTER
+STRING The quick brown fox jumps over the lazy dog.
+ENTER
+ENTER
+
+REM Slow typing (100ms per key) - like human typing
+STRING_DELAY 100
+STRING === Slow Speed (100ms) ===
+ENTER
+STRING Hello World!
+ENTER
+ENTER
+
+REM Reset to normal speed
+STRING_DELAY 50
+STRING Done!
+ENTER

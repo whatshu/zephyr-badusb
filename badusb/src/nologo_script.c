@@ -47,9 +47,11 @@ UDC_STATIC_BUF_DEFINE(script_kbd_report, KB_REPORT_SIZE);
 /* Default delay between commands (ms) */
 static uint32_t default_delay_ms = 0;
 
+/* String/character input delay (ms) - controls typing speed */
+static uint32_t string_delay_ms = 50;
+
 /* Key press/release delay (ms) */
-#define KEY_PRESS_DELAY_MS   50
-#define KEY_RELEASE_DELAY_MS 20
+#define KEY_RELEASE_DELAY_MS 10
 
 /* Script execution state */
 static volatile bool script_hid_ready;
@@ -146,7 +148,7 @@ static int send_key(uint8_t modifier, uint8_t keycode)
         return ret;
     }
 
-    k_msleep(KEY_PRESS_DELAY_MS);
+    k_msleep(string_delay_ms);
 
     /* Key release */
     memset(script_kbd_report, 0, KB_REPORT_SIZE);
@@ -315,6 +317,18 @@ static int parse_and_execute_line(const char *line, size_t len)
         const char *arg = skip_whitespace(cmd + cmd_len, end);
         default_delay_ms = atoi(arg);
         printk("script: DEFAULT_DELAY set to %u ms\n", default_delay_ms);
+        return 0;
+    }
+
+    /* STRING_DELAY <ms> or STRINGDELAY <ms> - controls typing speed */
+    if ((strncasecmp(cmd, "STRING_DELAY", cmd_len) == 0 && cmd_len == 12) ||
+        (strncasecmp(cmd, "STRINGDELAY", cmd_len) == 0 && cmd_len == 11)) {
+        const char *arg = skip_whitespace(cmd + cmd_len, end);
+        string_delay_ms = atoi(arg);
+        if (string_delay_ms < 5) {
+            string_delay_ms = 5;  /* Minimum 5ms to ensure reliable input */
+        }
+        printk("script: STRING_DELAY set to %u ms\n", string_delay_ms);
         return 0;
     }
 
