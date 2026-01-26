@@ -31,9 +31,9 @@ project(nologo_usb)
 
 target_sources(app PRIVATE
   src/app_main.c
+  src/nologo_cdc.c
   src/nologo_config.c
   src/nologo_hid.c
-  src/nologo_printk_router.c
   src/nologo_status_led.c
   src/nologo_usb.c
 )

@@ -2,11 +2,9 @@
 
 #include "nologo_usb.h"
 
-#include "nologo_printk_router.h"
 #include "nologo_status_led.h"
 
 #include <zephyr/device.h>
-#include <zephyr/drivers/uart.h>
 #include <zephyr/storage/disk_access.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/printk.h>
@@ -37,21 +35,6 @@ USBD_CONFIGURATION_DEFINE(nologo_fs_config, 0, 250, &fs_cfg_desc);
 
 static void usb_msg_cb(struct usbd_context *const ctx, const struct usbd_msg *msg)
 {
-    /* CDC ACM: detect DTR */
-    if (msg->type == USBD_MSG_CDC_ACM_CONTROL_LINE_STATE) {
-        uint32_t dtr = 0U;
-
-        (void)uart_line_ctrl_get(msg->dev, UART_LINE_CTRL_DTR, &dtr);
-        if (dtr) {
-            nologo_printk_router_on_usb_dtr_set();
-        }
-    }
-
-    /* Any configured state should allow buffered printk to flush */
-    if (msg->type == USBD_MSG_CONFIGURATION && msg->status > 0) {
-        nologo_printk_router_on_usb_configured();
-    }
-
     /* VBUS gating (if supported) */
     if (usbd_can_detect_vbus(ctx)) {
         if (msg->type == USBD_MSG_VBUS_READY) {

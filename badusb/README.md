@@ -55,5 +55,5 @@ badusb/
   src/
     app_main.c
     nologo_usb.c / nologo_hid.c / nologo_config.c
-    nologo_printk_router.c / nologo_status_led.c
+    nologo_cdc.c / nologo_status_led.c
 ```

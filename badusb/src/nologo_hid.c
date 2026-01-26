@@ -32,7 +32,7 @@ enum {
 };
 
 UDC_STATIC_BUF_DEFINE(kbd_report, KB_REPORT_SIZE);
-static bool hid_ready;
+static volatile bool hid_ready;
 
 /*
  * Keep the current "send 'a' once at boot" behavior, but allow the host to
@@ -64,15 +64,13 @@ static int hid_set_report(const struct device *dev, const uint8_t type, const ui
     ARG_UNUSED(dev);
     ARG_UNUSED(type);
     ARG_UNUSED(id);
+    ARG_UNUSED(len);
+    ARG_UNUSED(buf);
 
     /*
-     * Minimal "future ability": if host sends 1 byte, treat it as new HID keycode.
-     * (e.g. HID_KEY_A..)
+     * Host sends SET_REPORT for LED indicators (NumLock, CapsLock, etc.).
+     * We don't need to handle them for this demo.
      */
-    if (len >= 1U && buf != NULL) {
-        atomic_set(&startup_keycode, buf[0]);
-        printk("hid: startup_keycode set to 0x%02x\n", buf[0]);
-    }
     return 0;
 }
 
@@ -119,6 +117,8 @@ static void hid_demo_thread(void *a, void *b, void *c)
     ARG_UNUSED(b);
     ARG_UNUSED(c);
 
+    printk("hid: demo thread waiting for interface ready\n");
+
     while (!hid_ready) {
         k_msleep(50);
     }
@@ -128,21 +128,38 @@ static void hid_demo_thread(void *a, void *b, void *c)
      * the first HID report. This helps avoid "Endpoint busy" errors
      * that can occur if the host is still setting up the interface.
      */
-    k_msleep(100);
+    k_msleep(500);
 
+    printk("hid: sending demo key (keycode=0x%02x)\n",
+           (uint8_t)atomic_get(&startup_keycode));
+
+    /* Key press */
     memset(kbd_report, 0, KB_REPORT_SIZE);
     kbd_report[KB_KEY_CODE1] = (uint8_t)atomic_get(&startup_keycode);
-    (void)hid_device_submit_report(hid_dev, KB_REPORT_SIZE, kbd_report);
-    k_msleep(20);
+    int ret = hid_device_submit_report(hid_dev, KB_REPORT_SIZE, kbd_report);
+    if (ret == 0) {
+        nologo_status_blink_blue();
+    } else {
+        printk("hid: key press submit failed (%d: %s)\n", ret, strerror(-ret));
+    }
+
+    k_msleep(50);
+
+    /* Key release */
     memset(kbd_report, 0, KB_REPORT_SIZE);
-    (void)hid_device_submit_report(hid_dev, KB_REPORT_SIZE, kbd_report);
+    ret = hid_device_submit_report(hid_dev, KB_REPORT_SIZE, kbd_report);
+    if (ret == 0) {
+        nologo_status_blink_blue();
+    } else {
+        printk("hid: key release submit failed (%d: %s)\n", ret, strerror(-ret));
+    }
 
     printk("hid: demo key sent\n");
     k_sleep(K_FOREVER);
 }
 
 K_THREAD_DEFINE(hid_demo_thread_id, 1024, hid_demo_thread,
-        NULL, NULL, NULL, 6, 0, 0);
+                NULL, NULL, NULL, 7, 0, K_TICKS_FOREVER);
 
 int nologo_hid_init(void)
 {
@@ -160,6 +177,9 @@ int nologo_hid_init(void)
         nologo_status_set_fault();
         return ret;
     }
+
+    /* Start the HID demo thread now that registration is complete */
+    k_thread_start(hid_demo_thread_id);
 
     printk("hid: registered\n");
     return 0;

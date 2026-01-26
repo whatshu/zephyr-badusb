@@ -214,7 +214,7 @@
 zephyr_udc0: &usbd {
 	status = "okay";
 
-	/* USB CDC ACM UART instance */
+	/* USB CDC ACM UART instance for serial demo */
 	cdc_acm_uart0: cdc_acm_uart0 {
 		compatible = "zephyr,cdc-acm-uart";
 	};
