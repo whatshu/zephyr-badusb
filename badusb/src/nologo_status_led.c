@@ -9,35 +9,19 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/printk.h>
 
-/* WS2812 LED strip (alias: led-strip) */
 static const struct device *const led_strip = DEVICE_DT_GET(DT_ALIAS(led_strip));
 
-/*
- * Status LED states:
- * - INIT: RED solid (during initialization)
- * - RUNNING: normal operation (all LEDs off by default)
- * - FAULT: RED blinking (critical error)
- *
- * Activity indicators (brief blinks):
- * - BLUE: HID keyboard output
- * - GREEN: CDC serial I/O
- */
-
-/* Status flags */
 #define STATUS_FLAG_INIT_DONE  BIT(0)
 #define STATUS_FLAG_FAULT      BIT(1)
 static atomic_t status_flags;
 
-/* LED blink duration (ms) */
 #define LED_BLINK_DURATION_MS   50
 #define LED_FAULT_PERIOD_MS     500
 
-/* Current LED state (for compositing) */
 static atomic_t blue_on;
 static atomic_t green_on;
-static atomic_t red_blink_phase;  /* For fault blinking: 0=off, 1=on */
+static atomic_t red_blink_phase;
 
-/* Work items for turning off LEDs after blink */
 static void blue_off_work_handler(struct k_work *work);
 static void green_off_work_handler(struct k_work *work);
 static void fault_blink_work_handler(struct k_work *work);
@@ -55,24 +39,17 @@ static void status_led_apply(void)
     atomic_val_t flags = atomic_get(&status_flags);
     struct led_rgb px = {0};
 
-    /* GREEN: CDC activity blink */
     if (atomic_get(&green_on)) {
         px.g = 0x10;
     }
-
-    /* BLUE: HID activity blink */
     if (atomic_get(&blue_on)) {
         px.b = 0x10;
     }
-
-    /* RED: Init phase (solid) or Fault (blinking) */
     if ((flags & STATUS_FLAG_FAULT) != 0) {
-        /* Fault mode: blink RED */
         if (atomic_get(&red_blink_phase)) {
             px.r = 0x20;
         }
     } else if ((flags & STATUS_FLAG_INIT_DONE) == 0) {
-        /* Init phase: solid RED */
         px.r = 0x10;
     }
 
@@ -99,47 +76,35 @@ static void fault_blink_work_handler(struct k_work *work)
 
     atomic_val_t flags = atomic_get(&status_flags);
     if ((flags & STATUS_FLAG_FAULT) == 0) {
-        /* Fault cleared, stop blinking */
         atomic_set(&red_blink_phase, 0);
         status_led_apply();
         return;
     }
 
-    /* Toggle blink phase */
     atomic_val_t phase = atomic_get(&red_blink_phase);
     atomic_set(&red_blink_phase, phase ? 0 : 1);
     status_led_apply();
-
-    /* Schedule next toggle */
     k_work_schedule(&fault_blink_work, K_MSEC(LED_FAULT_PERIOD_MS));
 }
 
 void nologo_status_init(void)
 {
-    /* Start in init phase: RED solid on */
     atomic_clear(&status_flags);
     atomic_set(&blue_on, 0);
     atomic_set(&green_on, 0);
     atomic_set(&red_blink_phase, 0);
-
-    printk("status: init (RED on)\n");
     status_led_apply();
 }
 
 void nologo_status_init_done(void)
 {
     atomic_or(&status_flags, STATUS_FLAG_INIT_DONE);
-    printk("status: init done (RED off)\n");
     status_led_apply();
 }
 
 void nologo_status_set_fault(void)
 {
     atomic_val_t old_flags = atomic_or(&status_flags, STATUS_FLAG_FAULT);
-
-    printk("status: FAULT set (RED blinking)\n");
-
-    /* Start fault blink timer if not already running */
     if ((old_flags & STATUS_FLAG_FAULT) == 0) {
         atomic_set(&red_blink_phase, 1);
         status_led_apply();
@@ -151,8 +116,6 @@ void nologo_status_blink_blue(void)
 {
     atomic_set(&blue_on, 1);
     status_led_apply();
-
-    /* Schedule turn-off after blink duration */
     k_work_schedule(&blue_off_work, K_MSEC(LED_BLINK_DURATION_MS));
 }
 
@@ -160,8 +123,6 @@ void nologo_status_blink_green(void)
 {
     atomic_set(&green_on, 1);
     status_led_apply();
-
-    /* Schedule turn-off after blink duration */
     k_work_schedule(&green_off_work, K_MSEC(LED_BLINK_DURATION_MS));
 }
 

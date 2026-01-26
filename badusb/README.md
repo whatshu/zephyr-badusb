@@ -15,11 +15,11 @@ run *source ../../../zephyr-venv/bin/activate* to enable the env.
 
 ## function
 
-- USB HID: keyboard
-- USB CDC ACM: serial
-- USB MSC: storage, only enabled in debug mode, everything is kept in flash
-- WS2812: status indicator, GPIO 22
-- FAT FS support
+- USB HID: keyboard.
+- USB CDC ACM: serial for dual comm.
+- USB MSC: storage, only enabled in debug mode. but everything is kept in flash in release mode.
+- WS2812: status indicator, GPIO 22. green for usb serial, red for init and error, blue for hid key stroke.
+- FAT FS support.
 
 ## compile
 
