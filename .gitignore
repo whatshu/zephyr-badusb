@@ -1,3 +1,4 @@
 .west
+build/
 badusb/build
 badusb/build_debug
