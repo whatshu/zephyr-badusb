@@ -56,10 +56,94 @@ static uint32_t string_delay_ms = 50;
 /* Script execution state */
 static volatile bool script_hid_ready;
 
+/* Maximum number of labels */
+#define MAX_LABELS 32
+
+/* Maximum loop nesting depth */
+#define MAX_LOOP_DEPTH 8
+
+/* Label entry */
+struct script_label {
+    char name[32];
+    size_t line_index;
+};
+
+/* Loop stack entry */
+struct loop_entry {
+    size_t start_line;      /* Line index of LOOP command */
+    int remaining;          /* Remaining iterations */
+};
+
+/* Script line entry */
+struct script_line {
+    const char *start;
+    size_t len;
+};
+
+/* Script execution context */
+struct script_context {
+    struct script_label labels[MAX_LABELS];
+    int label_count;
+
+    struct loop_entry loop_stack[MAX_LOOP_DEPTH];
+    int loop_depth;
+
+    struct script_line *lines;
+    size_t line_count;
+    size_t current_line;
+
+    bool goto_pending;
+    size_t goto_target;
+};
+
 /* Forward declarations */
 static int send_key(uint8_t modifier, uint8_t keycode);
 static int send_string(const char *str, size_t len);
-static int parse_and_execute_line(const char *line, size_t len);
+static int parse_and_execute_line(const char *line, size_t len, struct script_context *ctx);
+
+/**
+ * @brief Find a label by name
+ * @return line index or -1 if not found
+ */
+static int find_label(struct script_context *ctx, const char *name, size_t name_len)
+{
+    for (int i = 0; i < ctx->label_count; i++) {
+        if (strlen(ctx->labels[i].name) == name_len &&
+            strncasecmp(ctx->labels[i].name, name, name_len) == 0) {
+            return (int)ctx->labels[i].line_index;
+        }
+    }
+    return -1;
+}
+
+/**
+ * @brief Add a label to the context
+ */
+static int add_label(struct script_context *ctx, const char *name, size_t name_len, size_t line_index)
+{
+    if (ctx->label_count >= MAX_LABELS) {
+        printk("script: too many labels (max %d)\n", MAX_LABELS);
+        return -ENOMEM;
+    }
+
+    if (name_len >= sizeof(ctx->labels[0].name)) {
+        printk("script: label name too long\n");
+        return -EINVAL;
+    }
+
+    /* Check for duplicate */
+    if (find_label(ctx, name, name_len) >= 0) {
+        printk("script: duplicate label [%.*s]\n", (int)name_len, name);
+        return -EEXIST;
+    }
+
+    memcpy(ctx->labels[ctx->label_count].name, name, name_len);
+    ctx->labels[ctx->label_count].name[name_len] = '\0';
+    ctx->labels[ctx->label_count].line_index = line_index;
+    ctx->label_count++;
+
+    return 0;
+}
 
 /**
  * @brief Character to HID keycode mapping
@@ -281,7 +365,7 @@ static const char *get_token(const char *p, const char *end, size_t *len)
 /**
  * @brief Parse and execute a single line of script
  */
-static int parse_and_execute_line(const char *line, size_t len)
+static int parse_and_execute_line(const char *line, size_t len, struct script_context *ctx)
 {
     if (len == 0) {
         return 0;
@@ -297,6 +381,78 @@ static int parse_and_execute_line(const char *line, size_t len)
 
     /* REM - Comment */
     if (strncasecmp(cmd, "REM", cmd_len) == 0 && cmd_len == 3) {
+        return 0;
+    }
+
+    /* LABEL <name> - Define a label (already parsed, just skip) */
+    if (strncasecmp(cmd, "LABEL", cmd_len) == 0 && cmd_len == 5) {
+        /* Labels are pre-parsed, nothing to do at execution time */
+        return 0;
+    }
+
+    /* GOTO <name> - Jump to a label */
+    if (strncasecmp(cmd, "GOTO", cmd_len) == 0 && cmd_len == 4) {
+        size_t label_len;
+        const char *label_name = get_token(cmd + cmd_len, end, &label_len);
+        if (label_len == 0) {
+            printk("script: GOTO missing label name\n");
+            return -EINVAL;
+        }
+
+        int target = find_label(ctx, label_name, label_len);
+        if (target < 0) {
+            printk("script: GOTO label not found [%.*s]\n", (int)label_len, label_name);
+            return -ENOENT;
+        }
+
+        printk("script: GOTO %.*s (line %d)\n", (int)label_len, label_name, target);
+        ctx->goto_pending = true;
+        ctx->goto_target = (size_t)target;
+        return 0;
+    }
+
+    /* LOOP <count> - Start a loop */
+    if (strncasecmp(cmd, "LOOP", cmd_len) == 0 && cmd_len == 4) {
+        const char *arg = skip_whitespace(cmd + cmd_len, end);
+        int count = atoi(arg);
+        if (count <= 0) {
+            printk("script: LOOP invalid count\n");
+            return -EINVAL;
+        }
+
+        if (ctx->loop_depth >= MAX_LOOP_DEPTH) {
+            printk("script: LOOP nesting too deep (max %d)\n", MAX_LOOP_DEPTH);
+            return -ENOMEM;
+        }
+
+        ctx->loop_stack[ctx->loop_depth].start_line = ctx->current_line;
+        ctx->loop_stack[ctx->loop_depth].remaining = count;
+        ctx->loop_depth++;
+
+        printk("script: LOOP %d (depth %d)\n", count, ctx->loop_depth);
+        return 0;
+    }
+
+    /* ENDLOOP - End of loop block */
+    if (strncasecmp(cmd, "ENDLOOP", cmd_len) == 0 && cmd_len == 7) {
+        if (ctx->loop_depth <= 0) {
+            printk("script: ENDLOOP without matching LOOP\n");
+            return -EINVAL;
+        }
+
+        struct loop_entry *loop = &ctx->loop_stack[ctx->loop_depth - 1];
+        loop->remaining--;
+
+        if (loop->remaining > 0) {
+            /* Jump back to after the LOOP command */
+            printk("script: ENDLOOP - %d iterations remaining\n", loop->remaining);
+            ctx->goto_pending = true;
+            ctx->goto_target = loop->start_line + 1;
+        } else {
+            /* Loop finished, pop from stack */
+            printk("script: ENDLOOP - loop complete\n");
+            ctx->loop_depth--;
+        }
         return 0;
     }
 
@@ -621,17 +777,40 @@ process_modifier_key:
 }
 
 /**
- * @brief Execute the script from config buffer
+ * @brief Pre-parse script to count lines and find labels
  */
-static int execute_script(const uint8_t *script, size_t script_len)
+static int preparse_script(const uint8_t *script, size_t script_len,
+                           struct script_context *ctx)
 {
     const char *p = (const char *)script;
     const char *end = p + script_len;
+    size_t line_index = 0;
 
-    printk("script: executing %u bytes\n", (unsigned)script_len);
+    /* First pass: count lines */
+    while (p < end) {
+        const char *line_end = p;
+        while (line_end < end && *line_end != '\n' && *line_end != '\r') {
+            line_end++;
+        }
+        line_index++;
+        p = line_end;
+        while (p < end && (*p == '\n' || *p == '\r')) {
+            p++;
+        }
+    }
+
+    ctx->line_count = line_index;
+    ctx->lines = k_malloc(sizeof(struct script_line) * line_index);
+    if (!ctx->lines) {
+        printk("script: failed to allocate line array\n");
+        return -ENOMEM;
+    }
+
+    /* Second pass: store lines and find labels */
+    p = (const char *)script;
+    line_index = 0;
 
     while (p < end) {
-        /* Find end of line */
         const char *line_end = p;
         while (line_end < end && *line_end != '\n' && *line_end != '\r') {
             line_end++;
@@ -643,12 +822,74 @@ static int execute_script(const uint8_t *script, size_t script_len)
             line_trim--;
         }
 
-        /* Execute line if not empty */
-        size_t line_len = line_trim - p;
-        if (line_len > 0) {
-            int ret = parse_and_execute_line(p, line_len);
+        ctx->lines[line_index].start = p;
+        ctx->lines[line_index].len = line_trim - p;
+
+        /* Check for LABEL command */
+        if (ctx->lines[line_index].len > 6) {
+            size_t cmd_len;
+            const char *cmd = get_token(p, line_trim, &cmd_len);
+            if (cmd_len == 5 && strncasecmp(cmd, "LABEL", 5) == 0) {
+                size_t label_len;
+                const char *label_name = get_token(cmd + cmd_len, line_trim, &label_len);
+                if (label_len > 0) {
+                    int ret = add_label(ctx, label_name, label_len, line_index);
+                    if (ret != 0 && ret != -EEXIST) {
+                        k_free(ctx->lines);
+                        ctx->lines = NULL;
+                        return ret;
+                    }
+                    printk("script: found LABEL %.*s at line %zu\n",
+                           (int)label_len, label_name, line_index);
+                }
+            }
+        }
+
+        line_index++;
+        p = line_end;
+        while (p < end && (*p == '\n' || *p == '\r')) {
+            p++;
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Execute the script from config buffer
+ */
+static int execute_script(const uint8_t *script, size_t script_len)
+{
+    struct script_context ctx = {0};
+    int ret;
+
+    printk("script: executing %u bytes\n", (unsigned)script_len);
+
+    /* Pre-parse script */
+    ret = preparse_script(script, script_len, &ctx);
+    if (ret != 0) {
+        printk("script: preparse failed (%d)\n", ret);
+        return ret;
+    }
+
+    printk("script: %zu lines, %d labels\n", ctx.line_count, ctx.label_count);
+
+    /* Execute lines */
+    ctx.current_line = 0;
+    while (ctx.current_line < ctx.line_count) {
+        struct script_line *line = &ctx.lines[ctx.current_line];
+
+        if (line->len > 0) {
+            ret = parse_and_execute_line(line->start, line->len, &ctx);
             if (ret != 0) {
-                printk("script: line failed (%d)\n", ret);
+                printk("script: line %zu failed (%d)\n", ctx.current_line, ret);
+            }
+
+            /* Handle goto */
+            if (ctx.goto_pending) {
+                ctx.goto_pending = false;
+                ctx.current_line = ctx.goto_target;
+                continue;
             }
 
             /* Apply default delay after each command */
@@ -657,11 +898,12 @@ static int execute_script(const uint8_t *script, size_t script_len)
             }
         }
 
-        /* Skip line ending */
-        p = line_end;
-        while (p < end && (*p == '\n' || *p == '\r')) {
-            p++;
-        }
+        ctx.current_line++;
+    }
+
+    /* Cleanup */
+    if (ctx.lines) {
+        k_free(ctx.lines);
     }
 
     printk("script: execution complete\n");

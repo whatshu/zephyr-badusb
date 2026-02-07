@@ -42,6 +42,24 @@
  *   WAIT_HOST [ms]          - Wait for host sync signal (optional timeout)
  *   SIGNAL_HOST             - Send sync signal to host
  *
+ * Flow Control:
+ *   LABEL <name>            - Define a label for GOTO target
+ *   GOTO <name>             - Jump to a label
+ *   LOOP <count>            - Start a loop block (repeats <count> times)
+ *   ENDLOOP                 - End of loop block
+ *
+ * Example of LOOP:
+ *   LOOP 5
+ *   STRING Hello
+ *   ENTER
+ *   ENDLOOP
+ *
+ * Example of GOTO:
+ *   LABEL start
+ *   STRING Repeating...
+ *   DELAY 1000
+ *   GOTO start
+ *
  * @return 0 on success, negative error code on failure
  */
 int nologo_script_run(void);

@@ -1,0 +1,82 @@
+REM ============================================
+REM BadUSB Script: LOOP and GOTO Demo
+REM Demonstrates flow control commands
+REM ============================================
+
+REM Wait for system to recognize the device
+DELAY 500
+
+REM Open Notepad
+GUI r
+DELAY 500
+STRING notepad
+ENTER
+DELAY 1000
+
+REM ============================================
+REM LOOP Example: Repeat a block 5 times
+REM ============================================
+
+STRING === LOOP Demo: Counting 1-5 ===
+ENTER
+
+LOOP 5
+STRING Count!
+ENTER
+DELAY 200
+ENDLOOP
+
+ENTER
+STRING === LOOP Complete ===
+ENTER
+ENTER
+
+REM ============================================
+REM Nested LOOP Example
+REM ============================================
+
+STRING === Nested LOOP Demo ===
+ENTER
+
+LOOP 3
+STRING [Outer]
+LOOP 2
+STRING [Inner]
+ENDLOOP
+ENTER
+ENDLOOP
+
+ENTER
+STRING === Nested LOOP Complete ===
+ENTER
+ENTER
+
+REM ============================================
+REM GOTO Example: Jump to label
+REM ============================================
+
+STRING === GOTO Demo ===
+ENTER
+
+GOTO skip_this
+STRING This line will be skipped!
+ENTER
+
+LABEL skip_this
+STRING Jumped here via GOTO!
+ENTER
+ENTER
+
+REM ============================================
+REM Infinite Loop Example (commented out)
+REM Uncomment to create an infinite loop
+REM ============================================
+
+REM LABEL infinite_start
+REM STRING Running forever...
+REM ENTER
+REM DELAY 1000
+REM GOTO infinite_start
+
+STRING === Demo Complete ===
+ENTER
